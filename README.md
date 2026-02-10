@@ -19,7 +19,8 @@
 - Networking for DevOps
 - Git
 - Scripting with Bash and Python
-- Containers & Kubernetes
+- Containers
+- Kubernetes
 - CI/CD
 - Terraform
 - Observability Basics
