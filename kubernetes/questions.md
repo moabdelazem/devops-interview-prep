@@ -544,3 +544,667 @@ kubectl config set-context --current --namespace=dev  # set default namespace
 Namespaces do **not** provide network isolation by default. Pods across namespaces can communicate freely unless you apply NetworkPolicies.
 
 ---
+
+### Q14: What are taints and tolerations?
+
+**Answer:**
+
+Taints and tolerations control which Pods can be scheduled on which nodes.
+
+- A **taint** is applied to a node. It repels Pods that do not tolerate it.
+- A **toleration** is applied to a Pod. It allows the Pod to be scheduled on a tainted node (but does not force it).
+
+**Taint effects:**
+
+| Effect | Behavior |
+|--------|----------|
+| `NoSchedule` | New Pods without a matching toleration will not be scheduled on this node. Existing Pods are unaffected. |
+| `PreferNoSchedule` | The scheduler tries to avoid the node, but will use it if no other option exists. |
+| `NoExecute` | New Pods are not scheduled, and existing Pods without a matching toleration are evicted. |
+
+**Applying a taint:**
+
+```bash
+# Taint a node
+kubectl taint nodes node1 gpu=true:NoSchedule
+
+# Remove a taint (trailing minus)
+kubectl taint nodes node1 gpu=true:NoSchedule-
+```
+
+**Adding a toleration to a Pod:**
+
+```yaml
+spec:
+  tolerations:
+    - key: "gpu"
+      operator: "Equal"
+      value: "true"
+      effect: "NoSchedule"
+```
+
+You can also use `operator: "Exists"` to match any value for that key:
+
+```yaml
+tolerations:
+  - key: "gpu"
+    operator: "Exists"
+    effect: "NoSchedule"
+```
+
+**Common use cases:**
+- **Dedicated nodes** -- Taint GPU nodes so only ML workloads with the right toleration run there.
+- **Control plane isolation** -- Control plane nodes have a `node-role.kubernetes.io/control-plane:NoSchedule` taint by default so user Pods are not scheduled on them.
+- **Node draining** -- `kubectl drain` applies a `NoExecute` taint to evict all Pods before maintenance.
+
+Taints repel. Tolerations allow, but do not attract. To force a Pod onto a specific node, combine tolerations with node affinity.
+
+---
+
+### Q15: What are labels and selectors?
+
+**Answer:**
+
+**Labels** are key-value pairs attached to any Kubernetes object. They are used to organize and identify resources.
+
+```yaml
+metadata:
+  labels:
+    app: frontend
+    env: production
+    team: platform
+```
+
+**Selectors** query objects by their labels. They are how controllers and Services find the Pods they manage.
+
+**Equality-based selectors:**
+```bash
+kubectl get pods -l app=frontend
+kubectl get pods -l env!=staging
+```
+
+**Set-based selectors:**
+```bash
+kubectl get pods -l 'env in (production, staging)'
+kubectl get pods -l 'team notin (legacy)'
+kubectl get pods -l 'gpu'           # key exists, any value
+kubectl get pods -l '!experimental' # key does not exist
+```
+
+**Where selectors are used:**
+- **Services** -- Select which Pods receive traffic
+- **Deployments / ReplicaSets** -- Select which Pods they own
+- **Network Policies** -- Select which Pods the policy applies to
+- **kube-scheduler** -- Node affinity and pod affinity use label selectors
+
+Labels are the primary mechanism for loose coupling in Kubernetes. Objects do not reference each other by name; they find each other through labels.
+
+---
+
+### Q16: What is the difference between nodeSelector and node affinity?
+
+**Answer:**
+
+Both control which nodes a Pod can be scheduled on, but node affinity is more expressive.
+
+**nodeSelector** -- Simple key-value match. The Pod runs only on nodes whose labels match exactly.
+
+```yaml
+spec:
+  nodeSelector:
+    disktype: ssd
+```
+
+**Node affinity** -- Supports operators (`In`, `NotIn`, `Exists`, `DoesNotExist`, `Gt`, `Lt`) and has two strength levels:
+
+```yaml
+spec:
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:   # hard rule
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: topology.kubernetes.io/zone
+                operator: In
+                values:
+                  - eu-west-1a
+                  - eu-west-1b
+      preferredDuringSchedulingIgnoredDuringExecution:  # soft preference
+        - weight: 80
+          preference:
+            matchExpressions:
+              - key: disktype
+                operator: In
+                values:
+                  - ssd
+```
+
+**Comparison:**
+
+| Feature | nodeSelector | Node affinity |
+|---------|-------------|---------------|
+| Syntax | Simple key=value | Expressive match expressions |
+| Hard/soft rules | Hard only | `required` (hard) and `preferred` (soft) |
+| Operators | Equality only | In, NotIn, Exists, DoesNotExist, Gt, Lt |
+| Multiple conditions | AND only | AND within a term, OR across terms |
+| Weighted preferences | No | Yes (via `weight` field) |
+
+Use `nodeSelector` for simple cases. Use node affinity when you need soft preferences, set-based matching, or weighted scoring.
+
+---
+
+### Q17: What is a DaemonSet?
+
+**Answer:**
+
+A DaemonSet ensures that a copy of a Pod runs on every node in the cluster (or a subset of nodes if you use a node selector or affinity).
+
+When a new node joins the cluster, a Pod is automatically created on it. When a node is removed, the Pod is garbage-collected.
+
+**Use cases:**
+- **Log collection** -- Run a Fluentd or Filebeat agent on every node
+- **Monitoring** -- Run a node exporter or Datadog agent on every node
+- **Networking** -- CNI plugins (Calico, Cilium) and kube-proxy run as DaemonSets
+- **Storage** -- CSI node drivers
+
+**Example:**
+
+```yaml
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: node-exporter
+spec:
+  selector:
+    matchLabels:
+      app: node-exporter
+  template:
+    metadata:
+      labels:
+        app: node-exporter
+    spec:
+      containers:
+        - name: node-exporter
+          image: prom/node-exporter:v1.7.0
+          ports:
+            - containerPort: 9100
+```
+
+DaemonSets respect taints and tolerations. To run on control plane nodes, the Pod must tolerate the `node-role.kubernetes.io/control-plane:NoSchedule` taint.
+
+---
+
+### Q18: What are static Pods?
+
+**Answer:**
+
+Static Pods are managed directly by the `kubelet` on a specific node, without the API server or any controller being involved.
+
+The kubelet watches a local directory (default: `/etc/kubernetes/manifests/`) for Pod manifests. When a YAML file is placed there, the kubelet creates and manages that Pod. If the file is removed, the Pod is deleted.
+
+**How they differ from regular Pods:**
+
+| Aspect | Regular Pod | Static Pod |
+|--------|-------------|------------|
+| Managed by | API server + controllers | kubelet directly |
+| Visible in API | Yes | Yes (as a mirror Pod, read-only) |
+| Scheduling | kube-scheduler assigns node | Always on the node where the manifest lives |
+| Self-healing | Controller recreates on failure | kubelet restarts on failure |
+| Updates | Via `kubectl apply` | Edit the manifest file on the node |
+
+**Primary use case:** The control plane itself. On clusters bootstrapped with `kubeadm`, the API server, controller manager, scheduler, and etcd all run as static Pods:
+
+```bash
+ls /etc/kubernetes/manifests/
+# etcd.yaml  kube-apiserver.yaml  kube-controller-manager.yaml  kube-scheduler.yaml
+```
+
+This solves the chicken-and-egg problem -- the kubelet can start control plane components before the API server exists.
+
+---
+
+### Q19: How do rolling updates and rollbacks work?
+
+**Answer:**
+
+**Rolling updates** let you update a Deployment's Pod template (e.g., new image version) with zero downtime. The Deployment controller replaces Pods gradually rather than all at once.
+
+**How it works step-by-step:**
+
+1. You change the Pod template (e.g., `kubectl set image deployment/myapp app=myapp:2.0`).
+2. The Deployment controller creates a **new ReplicaSet** with the updated template.
+3. It scales up the new ReplicaSet and scales down the old one incrementally.
+4. At each step, it respects:
+   - `maxSurge` -- Maximum number of extra Pods above the desired count (default 25%).
+   - `maxUnavailable` -- Maximum number of Pods that can be unavailable (default 25%).
+5. Once all new Pods are ready and all old Pods are terminated, the rollout is complete.
+
+**Example with zero downtime:**
+
+```yaml
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1          # allow 1 extra Pod during update (4 total)
+      maxUnavailable: 0    # never go below 3 ready Pods
+```
+
+**Rollbacks:**
+
+Kubernetes keeps previous ReplicaSets (controlled by `revisionHistoryLimit`, default 10). Each ReplicaSet represents a revision. A rollback simply scales a previous ReplicaSet back up and scales the current one down.
+
+```bash
+# Check rollout status
+kubectl rollout status deployment myapp
+
+# View revision history
+kubectl rollout history deployment myapp
+
+# See details of a specific revision
+kubectl rollout history deployment myapp --revision=2
+
+# Rollback to the previous revision
+kubectl rollout undo deployment myapp
+
+# Rollback to a specific revision
+kubectl rollout undo deployment myapp --to-revision=2
+
+# Pause and resume a rollout (for canary-style testing)
+kubectl rollout pause deployment myapp
+kubectl rollout resume deployment myapp
+```
+
+Under the hood, `kubectl rollout undo` does not revert the manifest. It updates the Deployment's Pod template to match the old ReplicaSet's template, which triggers a new rollout that reuses the old ReplicaSet.
+
+---
+
+### Q20: How do command and args work in a Pod spec?
+
+**Answer:**
+
+In a Pod spec, `command` and `args` override the container image's `ENTRYPOINT` and `CMD`.
+
+**Mapping to Dockerfile:**
+
+| Dockerfile | Pod spec | Purpose |
+|------------|----------|---------|
+| `ENTRYPOINT` | `command` | The executable to run |
+| `CMD` | `args` | Default arguments passed to the executable |
+
+**Override rules:**
+
+| `command` set? | `args` set? | What runs |
+|----------------|-------------|-----------|
+| No | No | Image's `ENTRYPOINT` + `CMD` |
+| Yes | No | Pod's `command` only (image CMD ignored) |
+| No | Yes | Image's `ENTRYPOINT` + Pod's `args` |
+| Yes | Yes | Pod's `command` + Pod's `args` |
+
+**Examples:**
+
+```yaml
+# Use the image defaults (ENTRYPOINT + CMD)
+containers:
+  - name: app
+    image: nginx:1.25
+
+# Override just the arguments
+containers:
+  - name: app
+    image: myapp:1.0
+    args: ["--port", "9090", "--verbose"]
+
+# Override the entire command and arguments
+containers:
+  - name: debug
+    image: busybox
+    command: ["sh", "-c"]
+    args: ["echo hello && sleep 3600"]
+
+# Run a one-off task
+containers:
+  - name: migrate
+    image: myapp:1.0
+    command: ["python", "manage.py", "migrate"]
+```
+
+Key detail: `command` and `args` are arrays. Each element is a separate argument. Do not try to pass a full command string as a single element unless you prefix it with a shell (`sh -c`).
+
+---
+
+### Q21: What are all the ways to inject environment variables into a Pod?
+
+**Answer:**
+
+There are five ways to set environment variables in a container spec.
+
+**1. Static key-value pairs (`env`)**
+
+Hardcoded directly in the manifest:
+
+```yaml
+env:
+  - name: APP_ENV
+    value: "production"
+  - name: LOG_LEVEL
+    value: "info"
+```
+
+**2. From a ConfigMap (`configMapKeyRef` / `configMapRef`)**
+
+Single key:
+```yaml
+env:
+  - name: LOG_LEVEL
+    valueFrom:
+      configMapKeyRef:
+        name: app-config
+        key: LOG_LEVEL
+```
+
+All keys at once:
+```yaml
+envFrom:
+  - configMapRef:
+      name: app-config
+```
+
+Each key in the ConfigMap becomes an environment variable.
+
+**3. From a Secret (`secretKeyRef` / `secretRef`)**
+
+Single key:
+```yaml
+env:
+  - name: DB_PASSWORD
+    valueFrom:
+      secretKeyRef:
+        name: db-creds
+        key: password
+```
+
+All keys at once:
+```yaml
+envFrom:
+  - secretRef:
+      name: db-creds
+```
+
+**4. From Pod fields -- Downward API (`fieldRef`)**
+
+Exposes Pod metadata as environment variables:
+
+```yaml
+env:
+  - name: POD_NAME
+    valueFrom:
+      fieldRef:
+        fieldPath: metadata.name
+  - name: POD_NAMESPACE
+    valueFrom:
+      fieldRef:
+        fieldPath: metadata.namespace
+  - name: POD_IP
+    valueFrom:
+      fieldRef:
+        fieldPath: status.podIP
+  - name: NODE_NAME
+    valueFrom:
+      fieldRef:
+        fieldPath: spec.nodeName
+  - name: SERVICE_ACCOUNT
+    valueFrom:
+      fieldRef:
+        fieldPath: spec.serviceAccountName
+```
+
+**5. From container resource limits (`resourceFieldRef`)**
+
+Exposes the container's own resource requests and limits:
+
+```yaml
+env:
+  - name: CPU_LIMIT
+    valueFrom:
+      resourceFieldRef:
+        containerName: app
+        resource: limits.cpu
+  - name: MEMORY_LIMIT
+    valueFrom:
+      resourceFieldRef:
+        containerName: app
+        resource: limits.memory
+```
+
+**Summary table:**
+
+| Method | Source | Use case |
+|--------|--------|----------|
+| `value` | Inline string | Simple, static values |
+| `configMapKeyRef` / `configMapRef` | ConfigMap | Non-sensitive config shared across Pods |
+| `secretKeyRef` / `secretRef` | Secret | Passwords, tokens, certificates |
+| `fieldRef` | Pod metadata (Downward API) | Pod name, namespace, IP, node name |
+| `resourceFieldRef` | Container resources | Expose CPU/memory limits to the app |
+
+`envFrom` injects all keys from a ConfigMap or Secret. You can add `prefix` to namespace them:
+
+```yaml
+envFrom:
+  - configMapRef:
+      name: app-config
+    prefix: APP_
+```
+
+This turns a ConfigMap key `PORT` into the variable `APP_PORT`.
+
+---
+
+### Q22: What are init containers and how do they work?
+
+**Answer:**
+
+Init containers are specialized containers that run **before** the main application containers start. They run to completion, one at a time, in the order they are defined. The main containers only start after all init containers have succeeded.
+
+**Key properties:**
+- Run sequentially (not in parallel)
+- Must exit with code 0 to be considered successful
+- If an init container fails, the kubelet retries it according to the Pod's `restartPolicy`
+- Can use a different image from the main container
+- Have access to the same volumes as the main containers
+- Do not support readiness, liveness, or startup probes (they are not long-running)
+
+**Common use cases:**
+- **Wait for dependencies** -- Block startup until a database or API is reachable
+- **Run database migrations** -- Apply schema changes before the app starts
+- **Populate shared volumes** -- Download config files or clone a Git repo
+- **Set permissions** -- Fix file ownership or permissions on mounted volumes
+
+**Example:**
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: myapp
+spec:
+  initContainers:
+    - name: wait-for-db
+      image: busybox:1.36
+      command: ["sh", "-c"]
+      args:
+        - |
+          until nc -z postgres-svc 5432; do
+            echo "waiting for database..."
+            sleep 2
+          done
+    - name: run-migrations
+      image: myapp:1.0
+      command: ["python", "manage.py", "migrate"]
+  containers:
+    - name: app
+      image: myapp:1.0
+      ports:
+        - containerPort: 8080
+```
+
+In this example, `wait-for-db` runs first until the database is reachable, then `run-migrations` applies schema changes, and only then does the `app` container start.
+
+**Init containers vs sidecar containers:**
+
+| Aspect | Init container | Sidecar container |
+|--------|---------------|-------------------|
+| When it runs | Before main containers | Alongside main containers |
+| Lifecycle | Runs to completion, then exits | Runs for the lifetime of the Pod |
+| Use case | Setup and preconditions | Ongoing support (logging, proxying) |
+
+---
+
+### Q23: What is a sidecar container?
+
+**Answer:**
+
+A sidecar container runs **alongside** the main application container in the same Pod for the entire Pod's lifetime. It extends or enhances the application without modifying its code.
+
+Because containers in a Pod share the same network namespace and volumes, the sidecar can:
+- Access the same `localhost` network
+- Read/write to shared volumes
+- Start and stop with the same lifecycle
+
+**Common sidecar patterns:**
+
+| Pattern | Sidecar does | Example |
+|---------|-------------|---------|
+| **Proxy / Service mesh** | Handles traffic routing, mTLS, retries | Envoy (Istio), Linkerd proxy |
+| **Log shipping** | Reads log files from a shared volume and forwards them | Fluentd, Filebeat |
+| **Monitoring agent** | Collects metrics and sends to a backend | Prometheus exporter |
+| **Config reload** | Watches for config changes and signals the main app | Config watcher |
+
+**Example -- Envoy proxy sidecar:**
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: myapp
+spec:
+  containers:
+    - name: app
+      image: myapp:1.0
+      ports:
+        - containerPort: 8080
+    - name: envoy
+      image: envoyproxy/envoy:v1.28
+      ports:
+        - containerPort: 9901
+      volumeMounts:
+        - name: envoy-config
+          mountPath: /etc/envoy
+  volumes:
+    - name: envoy-config
+      configMap:
+        name: envoy-config
+```
+
+**Native sidecar containers (Kubernetes 1.28+):**
+
+Kubernetes introduced a `restartPolicy: Always` field on init containers, making them run for the Pod's lifetime instead of exiting. This gives sidecars proper lifecycle ordering -- they start before the main container and stop after it.
+
+```yaml
+initContainers:
+  - name: log-agent
+    image: fluentd:latest
+    restartPolicy: Always   # makes this a native sidecar
+```
+
+This solves the old problem of sidecar containers exiting before the main container finishes (or the main container starting before the sidecar is ready).
+
+---
+
+### Q24: What is autoscaling in Kubernetes?
+
+**Answer:**
+
+Kubernetes supports three levels of autoscaling:
+
+**1. Horizontal Pod Autoscaler (HPA)**
+
+Scales the number of Pod replicas based on observed metrics (CPU, memory, or custom metrics).
+
+```yaml
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: myapp-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: myapp
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+```
+
+This scales the Deployment between 2 and 10 replicas, targeting 70% average CPU utilization. HPA requires the Metrics Server to be installed.
+
+```bash
+# Create an HPA imperatively
+kubectl autoscale deployment myapp --min=2 --max=10 --cpu-percent=70
+
+# Check HPA status
+kubectl get hpa
+```
+
+Do not set `spec.replicas` in the Deployment when using HPA -- it will conflict with the autoscaler.
+
+**2. Vertical Pod Autoscaler (VPA)**
+
+Adjusts the CPU and memory **requests and limits** of containers based on actual usage. It does not change the replica count.
+
+- Analyzes historical resource usage
+- Recommends or automatically applies new resource values
+- Requires Pod restarts to apply changes (it evicts and recreates Pods)
+
+VPA is useful when you are unsure what resource requests to set. It is not built into Kubernetes by default and must be installed separately.
+
+Do not use HPA and VPA together on the same metric (e.g., both scaling on CPU).
+
+**3. Cluster Autoscaler**
+
+Scales the number of **nodes** in the cluster.
+
+- When Pods cannot be scheduled because no node has enough resources, it provisions a new node from the cloud provider.
+- When nodes are underutilized and their Pods can be moved elsewhere, it removes the node.
+- Works with cloud provider APIs (AWS ASG, GCP MIG, Azure VMSS).
+
+**How the three work together:**
+
+```
+Traffic increases
+      |
+HPA: adds more Pod replicas
+      |
+No node has room for the new Pods
+      |
+Cluster Autoscaler: provisions a new node
+      |
+Scheduler: places Pods on the new node
+```
+
+**Comparison:**
+
+| Autoscaler | What it scales | Based on | Built-in |
+|------------|---------------|----------|----------|
+| HPA | Pod replicas | CPU, memory, custom metrics | Yes |
+| VPA | Container resources (requests/limits) | Historical usage | No (add-on) |
+| Cluster Autoscaler | Nodes | Pending Pods / node utilization | No (add-on) |
+
+---
