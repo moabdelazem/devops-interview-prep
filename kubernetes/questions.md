@@ -1208,3 +1208,509 @@ Scheduler: places Pods on the new node
 | Cluster Autoscaler | Nodes | Pending Pods / node utilization | No (add-on) |
 
 ---
+
+## Storage
+
+### Q25: What are the different volume types in Kubernetes?
+
+**Answer:**
+
+Kubernetes supports many volume types. The most important ones for interviews:
+
+**Ephemeral volumes (deleted with the Pod):**
+
+| Type | Description |
+|------|-------------|
+| `emptyDir` | Empty directory created when the Pod starts. Shared between containers in the same Pod. Deleted when the Pod is removed. |
+| `emptyDir` with `medium: Memory` | Same as above but backed by tmpfs (RAM). Fast but counts against the container's memory limit. |
+
+```yaml
+volumes:
+  - name: cache
+    emptyDir: {}
+  - name: scratch
+    emptyDir:
+      medium: Memory
+      sizeLimit: 100Mi
+```
+
+**Persistent volumes (survive Pod deletion):**
+
+| Type | Description |
+|------|-------------|
+| `persistentVolumeClaim` | References a PVC, which binds to a PV. The standard way to use persistent storage. |
+| `hostPath` | Mounts a file or directory from the host node's filesystem. Dangerous in production -- ties the Pod to a specific node. |
+| `nfs` | Mounts an NFS share. Supports `ReadWriteMany` access mode. |
+
+**Configuration volumes (read-only data injected into the Pod):**
+
+| Type | Description |
+|------|-------------|
+| `configMap` | Mounts ConfigMap keys as files. |
+| `secret` | Mounts Secret keys as files on a tmpfs (never written to disk). |
+| `downwardAPI` | Exposes Pod metadata (labels, annotations, resource limits) as files. |
+| `projected` | Combines multiple sources (ConfigMap, Secret, downwardAPI, ServiceAccountToken) into a single mount. |
+
+```yaml
+volumes:
+  - name: config
+    projected:
+      sources:
+        - configMap:
+            name: app-config
+        - secret:
+            name: app-secret
+```
+
+**Cloud provider volumes (via CSI):**
+
+| Provider | CSI driver |
+|----------|-----------|
+| AWS | `ebs.csi.aws.com` (EBS), `efs.csi.aws.com` (EFS) |
+| GCP | `pd.csi.storage.gke.io` (Persistent Disk) |
+| Azure | `disk.csi.azure.com` (Azure Disk), `file.csi.azure.com` (Azure Files) |
+
+These are used through PVCs and StorageClasses, not referenced directly.
+
+---
+
+### Q26: What are PersistentVolumes, PersistentVolumeClaims, and how do they work together?
+
+**Answer:**
+
+The PV/PVC model separates storage provisioning from storage consumption.
+
+- **PersistentVolume (PV)** -- A piece of storage in the cluster, provisioned by an admin or dynamically by a StorageClass. It is a cluster-scoped resource.
+- **PersistentVolumeClaim (PVC)** -- A request for storage by a user. It is namespace-scoped. Pods reference PVCs, not PVs directly.
+
+**Lifecycle:**
+
+```
+Admin creates PV (or StorageClass provisions one)
+      |
+User creates PVC with size and access mode
+      |
+Control plane binds PVC to a matching PV
+      |
+Pod mounts the PVC as a volume
+      |
+Pod is deleted --> PVC remains --> data persists
+      |
+PVC is deleted --> reclaim policy decides PV fate
+```
+
+**PV example (static provisioning):**
+
+```yaml
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: my-pv
+spec:
+  capacity:
+    storage: 10Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  hostPath:
+    path: /data/my-pv
+```
+
+**PVC example:**
+
+```yaml
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: my-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+```
+
+**Mounting in a Pod:**
+
+```yaml
+spec:
+  volumes:
+    - name: data
+      persistentVolumeClaim:
+        claimName: my-pvc
+  containers:
+    - name: app
+      volumeMounts:
+        - name: data
+          mountPath: /app/data
+```
+
+**Access modes:**
+
+| Mode | Abbreviation | Description |
+|------|-------------|-------------|
+| ReadWriteOnce | RWO | Mounted read-write by a single node |
+| ReadOnlyMany | ROX | Mounted read-only by many nodes |
+| ReadWriteMany | RWX | Mounted read-write by many nodes (NFS, EFS) |
+| ReadWriteOncePod | RWOP | Mounted read-write by a single Pod (k8s 1.27+) |
+
+**Reclaim policies:**
+
+| Policy | What happens when PVC is deleted |
+|--------|--------------------------------|
+| Retain | PV remains with data intact. Admin must manually clean up. |
+| Delete | PV and underlying storage are deleted. Default for dynamic provisioning. |
+| Recycle | Deprecated. Was a basic `rm -rf /volume/*`. |
+
+---
+
+### Q27: What are StorageClasses and dynamic provisioning?
+
+**Answer:**
+
+A StorageClass defines how storage is dynamically provisioned when a PVC is created. Instead of an admin manually creating PVs, the StorageClass tells Kubernetes which provisioner to use and with what parameters.
+
+```yaml
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: fast-ssd
+provisioner: ebs.csi.aws.com
+parameters:
+  type: gp3
+  iops: "5000"
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+```
+
+**Key fields:**
+
+| Field | Purpose |
+|-------|---------|
+| `provisioner` | The CSI driver or plugin that creates the actual storage |
+| `parameters` | Provider-specific settings (disk type, IOPS, etc.) |
+| `reclaimPolicy` | What happens to the PV when the PVC is deleted |
+| `volumeBindingMode` | `Immediate` (bind PV right away) or `WaitForFirstConsumer` (bind when a Pod uses it -- avoids zone mismatch) |
+| `allowVolumeExpansion` | Whether PVCs using this class can be resized |
+
+**PVC referencing a StorageClass:**
+
+```yaml
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: app-data
+spec:
+  storageClassName: fast-ssd
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+```
+
+When this PVC is created, the StorageClass automatically provisions a 20Gi gp3 EBS volume.
+
+**Default StorageClass:** If a PVC does not specify `storageClassName`, the cluster's default StorageClass is used (the one annotated with `storageclass.kubernetes.io/is-default-class: "true"`).
+
+---
+
+### Q28: What is a StatefulSet and how does it handle storage?
+
+**Answer:**
+
+A StatefulSet manages stateful applications that need stable identities and persistent storage.
+
+**How it differs from a Deployment:**
+
+| Feature | Deployment | StatefulSet |
+|---------|-----------|-------------|
+| Pod names | Random suffix (`myapp-7b4d5-xk2lp`) | Ordered index (`myapp-0`, `myapp-1`, `myapp-2`) |
+| Startup order | All Pods start in parallel | Pods start sequentially (0, then 1, then 2) |
+| Stable network ID | No | Yes, via a headless Service (`myapp-0.myapp-svc`) |
+| Storage | Shared PVC or no PVC | Each Pod gets its own PVC via `volumeClaimTemplates` |
+| Deletion order | Random | Reverse order (2, then 1, then 0) |
+
+**volumeClaimTemplates:**
+
+Each Pod gets a unique PVC that follows it across rescheduling:
+
+```yaml
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+spec:
+  serviceName: postgres-svc
+  replicas: 3
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:15
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: fast-ssd
+        resources:
+          requests:
+            storage: 10Gi
+```
+
+This creates PVCs named `data-postgres-0`, `data-postgres-1`, `data-postgres-2`. If `postgres-1` is rescheduled to another node, it reattaches to `data-postgres-1`.
+
+**Use cases:** Databases (PostgreSQL, MySQL), message brokers (Kafka), distributed stores (etcd, Elasticsearch).
+
+Deleting a StatefulSet does **not** delete its PVCs. This is by design to prevent accidental data loss.
+
+---
+
+## Networking
+
+### Q29: Explain the Kubernetes networking model.
+
+**Answer:**
+
+Kubernetes imposes three fundamental rules:
+
+1. **Every Pod gets its own IP address.**
+2. **All Pods can communicate with all other Pods without NAT** (across any node).
+3. **The IP a Pod sees for itself is the same IP other Pods see for it.**
+
+**How traffic flows at each level:**
+
+**Pod-to-Pod on the same node:**
+- Containers within a Pod communicate via `localhost`.
+- Pods on the same node communicate through a virtual bridge (e.g., `cbr0`). The CNI plugin sets this up.
+
+**Pod-to-Pod across nodes:**
+- The CNI plugin creates an overlay network (VXLAN, IPIP, WireGuard) or uses native routing (BGP with Calico).
+- Each node gets a Pod CIDR (e.g., `10.244.1.0/24`), and the CNI plugin ensures routes exist between them.
+
+**Pod-to-Service:**
+- Pods access Services via ClusterIP or DNS name.
+- `kube-proxy` uses iptables/IPVS rules to NAT the Service IP to a backing Pod IP.
+
+**External-to-Pod:**
+- NodePort: External traffic hits `<NodeIP>:<NodePort>`, kube-proxy forwards to a Pod.
+- LoadBalancer: Cloud LB forwards to NodePorts.
+- Ingress: An Ingress controller (nginx, Traefik) terminates HTTP/HTTPS and routes to Services.
+
+**Key IP ranges:**
+
+| Range | Purpose | Example |
+|-------|---------|---------|
+| Pod CIDR | IP addresses for Pods | `10.244.0.0/16` |
+| Service CIDR | ClusterIP addresses for Services | `10.96.0.0/12` |
+| Node IPs | Actual node addresses | `192.168.1.0/24` |
+
+---
+
+### Q30: What are NetworkPolicies?
+
+**Answer:**
+
+A NetworkPolicy controls traffic flow to and from Pods at the IP/port level. By default, all Pods can communicate with all other Pods. NetworkPolicies add firewall-like rules.
+
+**Key concepts:**
+- NetworkPolicies are namespace-scoped.
+- They select Pods using `podSelector`.
+- They require a CNI plugin that supports them (Calico, Cilium, Weave). Flannel does **not** support NetworkPolicies.
+- If any NetworkPolicy selects a Pod, all traffic **not explicitly allowed** is denied (default deny for the selected direction).
+
+**Example -- deny all ingress to a namespace:**
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: deny-all
+  namespace: production
+spec:
+  podSelector: {}   # selects all Pods in the namespace
+  policyTypes:
+    - Ingress
+```
+
+**Example -- allow traffic only from frontend Pods to backend Pods on port 8080:**
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-frontend
+  namespace: production
+spec:
+  podSelector:
+    matchLabels:
+      app: backend
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: frontend
+      ports:
+        - protocol: TCP
+          port: 8080
+```
+
+**Example -- allow DNS egress (required if you deny all egress):**
+
+```yaml
+egress:
+  - to: []
+    ports:
+      - protocol: UDP
+        port: 53
+      - protocol: TCP
+        port: 53
+```
+
+**Common patterns:**
+
+| Pattern | podSelector | policyTypes | Rules |
+|---------|------------|-------------|-------|
+| Deny all ingress | `{}` | Ingress | No `ingress` rules |
+| Deny all egress | `{}` | Egress | No `egress` rules |
+| Allow from specific Pods | `app: backend` | Ingress | `from: podSelector: app: frontend` |
+| Allow from a namespace | `app: backend` | Ingress | `from: namespaceSelector: name: monitoring` |
+| Allow to external CIDR | `app: backend` | Egress | `to: ipBlock: cidr: 10.0.0.0/8` |
+
+---
+
+### Q31: What is Ingress and how does it differ from a Service?
+
+**Answer:**
+
+An Ingress is an API object that manages external HTTP/HTTPS access to Services. It provides capabilities that Services alone do not have.
+
+**What Ingress adds over a plain Service:**
+
+| Feature | Service (NodePort / LB) | Ingress |
+|---------|------------------------|---------|
+| Layer | L4 (TCP/UDP) | L7 (HTTP/HTTPS) |
+| Host-based routing | No | Yes (`app.example.com` vs `api.example.com`) |
+| Path-based routing | No | Yes (`/app` vs `/api`) |
+| TLS termination | No (needs external LB) | Yes (terminates HTTPS at the Ingress controller) |
+| Single entry point | One LB per Service | One LB for many Services |
+
+**Ingress requires an Ingress controller** (a Pod that reads Ingress resources and configures routing). Common controllers:
+
+| Controller | Notes |
+|-----------|-------|
+| NGINX Ingress | Most widely used, community and NGINX Inc versions |
+| Traefik | Auto-discovery, built-in Let's Encrypt |
+| HAProxy | High performance |
+| AWS ALB Ingress | Provisions AWS ALBs directly |
+
+**Example:**
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: app-ingress
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - app.example.com
+      secretName: app-tls
+  rules:
+    - host: app.example.com
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: api-svc
+                port:
+                  number: 80
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend-svc
+                port:
+                  number: 80
+```
+
+**Path types:**
+
+| Type | Behavior |
+|------|----------|
+| `Exact` | Matches the path exactly (e.g., `/api` but not `/api/v1`) |
+| `Prefix` | Matches the path prefix (e.g., `/api` matches `/api`, `/api/v1`, `/api/users`) |
+| `ImplementationSpecific` | Behavior depends on the Ingress controller |
+
+---
+
+### Q32: How does DNS work inside a Kubernetes cluster?
+
+**Answer:**
+
+Kubernetes runs **CoreDNS** as a Deployment in `kube-system`. Every Pod is configured to use CoreDNS as its DNS server (via `/etc/resolv.conf`).
+
+**What CoreDNS resolves:**
+
+| Record | Format | Example |
+|--------|--------|---------|
+| Service | `<service>.<namespace>.svc.cluster.local` | `myapp.production.svc.cluster.local` |
+| Pod | `<pod-ip-dashed>.<namespace>.pod.cluster.local` | `10-244-1-5.production.pod.cluster.local` |
+| StatefulSet Pod | `<pod-name>.<headless-service>.<namespace>.svc.cluster.local` | `postgres-0.postgres-svc.production.svc.cluster.local` |
+| Headless Service | Returns Pod IPs directly (A records for each Pod) | `postgres-svc.production.svc.cluster.local` |
+| ExternalName Service | Returns a CNAME record | `mydb.production.svc.cluster.local` -> `db.example.com` |
+
+**DNS search domains:**
+
+Pods can use short names because `/etc/resolv.conf` includes search domains:
+
+```
+search production.svc.cluster.local svc.cluster.local cluster.local
+nameserver 10.96.0.10
+```
+
+This means:
+- `myapp` resolves by trying `myapp.production.svc.cluster.local` first
+- `myapp.other-ns` resolves as `myapp.other-ns.svc.cluster.local`
+
+**dnsPolicy options:**
+
+| Policy | Behavior |
+|--------|----------|
+| `ClusterFirst` (default) | Use CoreDNS for cluster names, forward external names to upstream |
+| `Default` | Use the node's DNS config (`/etc/resolv.conf` on the node) |
+| `None` | No auto-config. You must provide `dnsConfig` manually |
+| `ClusterFirstWithHostNet` | Like `ClusterFirst` but for Pods using `hostNetwork: true` |
+
+**Debugging DNS:**
+
+```bash
+kubectl run debug --rm -it --image=busybox -- nslookup myapp.production.svc.cluster.local
+
+# Check CoreDNS Pods
+kubectl get pods -n kube-system -l k8s-app=kube-dns
+
+# Check CoreDNS logs
+kubectl logs -n kube-system -l k8s-app=kube-dns
+```
+
+---
