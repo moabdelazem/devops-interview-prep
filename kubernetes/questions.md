@@ -19,7 +19,7 @@ It is needed because running containers manually does not scale. Kubernetes hand
 
 ---
 
-### Q2: Explain the Kubernetes architecture.
+### Q2: Explain the Kubernetes architecture
 
 **Answer:**
 
@@ -38,47 +38,56 @@ It is needed because running containers manually does not scale. Kubernetes hand
 
 ---
 
-### Q3: Describe the lifecycle of a resource creation request in Kubernetes.
+### Q3: Describe the lifecycle of a resource creation request in Kubernetes
 
 **Answer:**
 
 When you run `kubectl apply -f deployment.yaml`, the following sequence occurs:
 
 **1. kubectl validates and sends the request**
+
 - `kubectl` validates the manifest locally (schema check).
 - It sends an HTTP POST/PUT request to the `kube-apiserver` on the control plane.
 
 **2. API server authenticates and authorizes**
+
 - The API server verifies the caller's identity (authentication via certificates, tokens, or OIDC).
 - It checks if the caller is allowed to perform this action (authorization via RBAC).
 
 **3. Admission controllers process the request**
+
 - The request passes through admission controllers (mutating and validating).
 - Mutating controllers can modify the object (e.g., inject default values, add sidecar containers).
 - Validating controllers can reject the request (e.g., enforce policies like resource limits).
 
 **4. Object is persisted to etcd**
+
 - The API server writes the desired state (the Deployment object) to `etcd`.
 - At this point, the resource exists in the cluster's desired state but nothing is running yet.
 
 **5. Controllers detect the new object**
+
 - The Deployment controller watches for changes. It sees the new Deployment and creates a ReplicaSet.
 - The ReplicaSet controller sees the new ReplicaSet and creates Pod objects to match the desired replica count.
 
 **6. Scheduler assigns Pods to nodes**
+
 - The `kube-scheduler` watches for unscheduled Pods (Pods with no `nodeName`).
 - It evaluates node resources, affinity rules, taints/tolerations, and selects the best node.
 - It updates the Pod's `nodeName` field in `etcd` via the API server.
 
 **7. kubelet starts the containers**
+
 - The `kubelet` on the assigned node watches for Pods scheduled to its node.
 - It instructs the container runtime (containerd, CRI-O) to pull the image and start the container.
 - It sets up networking (via CNI plugin) and mounts volumes.
 
 **8. kube-proxy updates network rules**
+
 - If a Service exists for these Pods, `kube-proxy` updates iptables/IPVS rules so traffic can reach the new Pods.
 
 **9. Readiness and liveness probes begin**
+
 - The `kubelet` starts executing any configured readiness and liveness probes.
 - The Pod is only added to Service endpoints once the readiness probe passes.
 
@@ -94,7 +103,7 @@ kubectl --> API server --> Admission Controllers --> etcd
 
 ---
 
-### Q4: Explain the Node, ReplicaSet, and Deployment controllers and how they interact with the API server.
+### Q4: Explain the Node, ReplicaSet, and Deployment controllers and how they interact with the API server
 
 **Answer:**
 
@@ -252,6 +261,7 @@ The kubelet does **not** manage containers that were not created by Kubernetes. 
 A network component that runs on every node and implements Kubernetes **Service** networking. When a Pod sends traffic to a Service's ClusterIP, kube-proxy routes it to one of the backing Pods.
 
 It does this using one of three modes:
+
 - **iptables** (default) -- Creates iptables rules that DNAT traffic from the Service IP to a randomly selected Pod IP.
 - **IPVS** -- Uses Linux IPVS for load balancing. Better performance at scale with support for multiple balancing algorithms (round-robin, least connections, etc.).
 - **userspace** -- Legacy mode. Proxies traffic through a userspace process. Rarely used.
@@ -261,6 +271,7 @@ It does this using one of three modes:
 A plugin that the kubelet calls when a Pod is created or deleted. It is responsible for assigning an IP address to the Pod and connecting it to the cluster network so Pods can communicate with each other.
 
 Common CNI plugins:
+
 - **Calico** -- L3 networking with BGP, supports network policies.
 - **Flannel** -- Simple overlay network using VXLAN.
 - **Cilium** -- eBPF-based, high performance, advanced network policies and observability.
@@ -268,12 +279,12 @@ Common CNI plugins:
 
 **How they differ:**
 
-| Aspect | kube-proxy | CNI plugin |
-|--------|-----------|------------|
-| Scope | Service-to-Pod routing | Pod-to-Pod networking |
+| Aspect          | kube-proxy                                | CNI plugin                                 |
+| --------------- | ----------------------------------------- | ------------------------------------------ |
+| Scope           | Service-to-Pod routing                    | Pod-to-Pod networking                      |
 | What it manages | ClusterIP, NodePort, LoadBalancer traffic | Pod IP assignment and network connectivity |
-| When it acts | When Service or Endpoints objects change | When a Pod is created or deleted |
-| Operates at | iptables / IPVS rules | Network interfaces, routes, overlays |
+| When it acts    | When Service or Endpoints objects change  | When a Pod is created or deleted           |
+| Operates at     | iptables / IPVS rules                     | Network interfaces, routes, overlays       |
 
 In short: CNI gives each Pod an IP and network connectivity. kube-proxy makes Services work by routing traffic to the right Pod.
 
@@ -294,6 +305,7 @@ A Pod is the smallest deployable unit in Kubernetes. It wraps one or more contai
 **Single-container Pod** -- The most common pattern. One application per Pod.
 
 **Multi-container Pod** -- Used for sidecar patterns:
+
 - **Sidecar** -- Adds functionality (e.g., log shipper, proxy like Envoy)
 - **Init container** -- Runs before the main container starts (e.g., wait for a database, run migrations)
 - **Ephemeral container** -- Injected into a running Pod for debugging (`kubectl debug`)
@@ -333,6 +345,7 @@ You rarely create Pods directly. You use a Deployment, which manages Pods throug
 A Deployment is a declarative way to manage a set of identical Pods. It creates and manages ReplicaSets, which in turn manage Pods.
 
 **What it provides:**
+
 - Desired replica count
 - Rolling updates when the Pod template changes
 - Automatic rollback on failure
@@ -341,6 +354,7 @@ A Deployment is a declarative way to manage a set of identical Pods. It creates 
 **Rollout strategies:**
 
 **RollingUpdate (default):**
+
 - Gradually replaces old Pods with new ones.
 - `maxSurge` -- How many extra Pods can exist during the update (default 25%).
 - `maxUnavailable` -- How many Pods can be unavailable during the update (default 25%).
@@ -351,10 +365,11 @@ spec:
     type: RollingUpdate
     rollingUpdate:
       maxSurge: 1
-      maxUnavailable: 0    # zero-downtime: always keep all replicas available
+      maxUnavailable: 0 # zero-downtime: always keep all replicas available
 ```
 
 **Recreate:**
+
 - Kills all old Pods before creating new ones.
 - Causes downtime. Used when the application cannot run two versions simultaneously (e.g., database schema conflicts).
 
@@ -386,6 +401,7 @@ A Service selects Pods using label selectors and load-balances traffic across th
 **Service types:**
 
 **ClusterIP (default):**
+
 - Internal-only. Accessible only from within the cluster.
 - Gets a virtual IP from the cluster's service CIDR.
 
@@ -404,20 +420,24 @@ spec:
 ```
 
 **NodePort:**
+
 - Exposes the Service on a static port (30000-32767) on every node's IP.
 - External traffic can reach the Service via `<NodeIP>:<NodePort>`.
 - Also creates a ClusterIP automatically.
 
 **LoadBalancer:**
+
 - Provisions an external load balancer from the cloud provider (AWS ELB, GCP LB, etc.).
 - External traffic hits the LB, which forwards to NodePorts, which forward to Pods.
 - Also creates a NodePort and ClusterIP automatically.
 
 **ExternalName:**
+
 - Maps the Service to a DNS CNAME record (e.g., `mydb.example.com`).
 - No proxying, no ClusterIP. Just a DNS alias.
 
 **Headless Service** (`clusterIP: None`):
+
 - No virtual IP. DNS returns the individual Pod IPs directly.
 - Used for StatefulSets where clients need to address specific Pods.
 
@@ -442,6 +462,7 @@ kubectl create configmap nginx-config --from-file=nginx.conf
 **Using a ConfigMap in a Pod:**
 
 As environment variables:
+
 ```yaml
 envFrom:
   - configMapRef:
@@ -449,6 +470,7 @@ envFrom:
 ```
 
 As a mounted volume (useful for config files):
+
 ```yaml
 volumes:
   - name: config
@@ -461,6 +483,7 @@ volumeMounts:
 ```
 
 **Key points:**
+
 - ConfigMaps are not encrypted. Do not put secrets in them.
 - Changes to a mounted ConfigMap are reflected in the Pod automatically (after a short delay), but environment variables require a Pod restart.
 - Maximum size is 1 MiB.
@@ -473,12 +496,12 @@ volumeMounts:
 
 Secrets store sensitive data such as passwords, tokens, and TLS certificates. They are functionally similar to ConfigMaps but with a few differences:
 
-| Aspect | ConfigMap | Secret |
-|--------|-----------|--------|
-| Purpose | Non-sensitive config | Sensitive data |
-| Stored as | Plain text in etcd | Base64-encoded in etcd (not encrypted by default) |
-| Size limit | 1 MiB | 1 MiB |
-| tmpfs mount | No | Yes (mounted as tmpfs, never written to disk on the node) |
+| Aspect      | ConfigMap            | Secret                                                    |
+| ----------- | -------------------- | --------------------------------------------------------- |
+| Purpose     | Non-sensitive config | Sensitive data                                            |
+| Stored as   | Plain text in etcd   | Base64-encoded in etcd (not encrypted by default)         |
+| Size limit  | 1 MiB                | 1 MiB                                                     |
+| tmpfs mount | No                   | Yes (mounted as tmpfs, never written to disk on the node) |
 
 **Creating a Secret:**
 
@@ -500,6 +523,7 @@ env:
 ```
 
 **Important notes:**
+
 - Base64 encoding is **not** encryption. Anyone with access to `etcd` or the API can read them.
 - Enable **encryption at rest** in the API server to encrypt Secrets in `etcd`.
 - Use RBAC to restrict who can read Secrets.
@@ -515,14 +539,15 @@ A Namespace is a logical partition within a cluster. It provides a scope for nam
 
 **Default Namespaces:**
 
-| Namespace | Purpose |
-|-----------|---------|
-| `default` | Where resources go if no namespace is specified |
-| `kube-system` | Control plane components (API server, scheduler, CoreDNS, etc.) |
-| `kube-public` | Readable by all users, used for cluster-wide public info |
-| `kube-node-lease` | Node heartbeat Lease objects |
+| Namespace         | Purpose                                                         |
+| ----------------- | --------------------------------------------------------------- |
+| `default`         | Where resources go if no namespace is specified                 |
+| `kube-system`     | Control plane components (API server, scheduler, CoreDNS, etc.) |
+| `kube-public`     | Readable by all users, used for cluster-wide public info        |
+| `kube-node-lease` | Node heartbeat Lease objects                                    |
 
 **When to use Namespaces:**
+
 - Separate environments in a shared cluster (dev, staging, prod)
 - Isolate teams or projects
 - Apply per-namespace resource quotas and limit ranges
@@ -538,6 +563,7 @@ kubectl config set-context --current --namespace=dev  # set default namespace
 ```
 
 **What is namespace-scoped vs cluster-scoped:**
+
 - **Namespace-scoped** -- Pods, Services, Deployments, ConfigMaps, Secrets, Roles, RoleBindings
 - **Cluster-scoped** -- Nodes, PersistentVolumes, Namespaces, ClusterRoles, ClusterRoleBindings
 
@@ -556,11 +582,11 @@ Taints and tolerations control which Pods can be scheduled on which nodes.
 
 **Taint effects:**
 
-| Effect | Behavior |
-|--------|----------|
-| `NoSchedule` | New Pods without a matching toleration will not be scheduled on this node. Existing Pods are unaffected. |
-| `PreferNoSchedule` | The scheduler tries to avoid the node, but will use it if no other option exists. |
-| `NoExecute` | New Pods are not scheduled, and existing Pods without a matching toleration are evicted. |
+| Effect             | Behavior                                                                                                 |
+| ------------------ | -------------------------------------------------------------------------------------------------------- |
+| `NoSchedule`       | New Pods without a matching toleration will not be scheduled on this node. Existing Pods are unaffected. |
+| `PreferNoSchedule` | The scheduler tries to avoid the node, but will use it if no other option exists.                        |
+| `NoExecute`        | New Pods are not scheduled, and existing Pods without a matching toleration are evicted.                 |
 
 **Applying a taint:**
 
@@ -593,6 +619,7 @@ tolerations:
 ```
 
 **Common use cases:**
+
 - **Dedicated nodes** -- Taint GPU nodes so only ML workloads with the right toleration run there.
 - **Control plane isolation** -- Control plane nodes have a `node-role.kubernetes.io/control-plane:NoSchedule` taint by default so user Pods are not scheduled on them.
 - **Node draining** -- `kubectl drain` applies a `NoExecute` taint to evict all Pods before maintenance.
@@ -618,12 +645,14 @@ metadata:
 **Selectors** query objects by their labels. They are how controllers and Services find the Pods they manage.
 
 **Equality-based selectors:**
+
 ```bash
 kubectl get pods -l app=frontend
 kubectl get pods -l env!=staging
 ```
 
 **Set-based selectors:**
+
 ```bash
 kubectl get pods -l 'env in (production, staging)'
 kubectl get pods -l 'team notin (legacy)'
@@ -632,6 +661,7 @@ kubectl get pods -l '!experimental' # key does not exist
 ```
 
 **Where selectors are used:**
+
 - **Services** -- Select which Pods receive traffic
 - **Deployments / ReplicaSets** -- Select which Pods they own
 - **Network Policies** -- Select which Pods the policy applies to
@@ -661,7 +691,7 @@ spec:
 spec:
   affinity:
     nodeAffinity:
-      requiredDuringSchedulingIgnoredDuringExecution:   # hard rule
+      requiredDuringSchedulingIgnoredDuringExecution: # hard rule
         nodeSelectorTerms:
           - matchExpressions:
               - key: topology.kubernetes.io/zone
@@ -669,7 +699,7 @@ spec:
                 values:
                   - eu-west-1a
                   - eu-west-1b
-      preferredDuringSchedulingIgnoredDuringExecution:  # soft preference
+      preferredDuringSchedulingIgnoredDuringExecution: # soft preference
         - weight: 80
           preference:
             matchExpressions:
@@ -681,13 +711,13 @@ spec:
 
 **Comparison:**
 
-| Feature | nodeSelector | Node affinity |
-|---------|-------------|---------------|
-| Syntax | Simple key=value | Expressive match expressions |
-| Hard/soft rules | Hard only | `required` (hard) and `preferred` (soft) |
-| Operators | Equality only | In, NotIn, Exists, DoesNotExist, Gt, Lt |
-| Multiple conditions | AND only | AND within a term, OR across terms |
-| Weighted preferences | No | Yes (via `weight` field) |
+| Feature              | nodeSelector     | Node affinity                            |
+| -------------------- | ---------------- | ---------------------------------------- |
+| Syntax               | Simple key=value | Expressive match expressions             |
+| Hard/soft rules      | Hard only        | `required` (hard) and `preferred` (soft) |
+| Operators            | Equality only    | In, NotIn, Exists, DoesNotExist, Gt, Lt  |
+| Multiple conditions  | AND only         | AND within a term, OR across terms       |
+| Weighted preferences | No               | Yes (via `weight` field)                 |
 
 Use `nodeSelector` for simple cases. Use node affinity when you need soft preferences, set-based matching, or weighted scoring.
 
@@ -702,6 +732,7 @@ A DaemonSet ensures that a copy of a Pod runs on every node in the cluster (or a
 When a new node joins the cluster, a Pod is automatically created on it. When a node is removed, the Pod is garbage-collected.
 
 **Use cases:**
+
 - **Log collection** -- Run a Fluentd or Filebeat agent on every node
 - **Monitoring** -- Run a node exporter or Datadog agent on every node
 - **Networking** -- CNI plugins (Calico, Cilium) and kube-proxy run as DaemonSets
@@ -744,13 +775,13 @@ The kubelet watches a local directory (default: `/etc/kubernetes/manifests/`) fo
 
 **How they differ from regular Pods:**
 
-| Aspect | Regular Pod | Static Pod |
-|--------|-------------|------------|
-| Managed by | API server + controllers | kubelet directly |
-| Visible in API | Yes | Yes (as a mirror Pod, read-only) |
-| Scheduling | kube-scheduler assigns node | Always on the node where the manifest lives |
-| Self-healing | Controller recreates on failure | kubelet restarts on failure |
-| Updates | Via `kubectl apply` | Edit the manifest file on the node |
+| Aspect         | Regular Pod                     | Static Pod                                  |
+| -------------- | ------------------------------- | ------------------------------------------- |
+| Managed by     | API server + controllers        | kubelet directly                            |
+| Visible in API | Yes                             | Yes (as a mirror Pod, read-only)            |
+| Scheduling     | kube-scheduler assigns node     | Always on the node where the manifest lives |
+| Self-healing   | Controller recreates on failure | kubelet restarts on failure                 |
+| Updates        | Via `kubectl apply`             | Edit the manifest file on the node          |
 
 **Primary use case:** The control plane itself. On clusters bootstrapped with `kubeadm`, the API server, controller manager, scheduler, and etcd all run as static Pods:
 
@@ -787,8 +818,8 @@ spec:
   strategy:
     type: RollingUpdate
     rollingUpdate:
-      maxSurge: 1          # allow 1 extra Pod during update (4 total)
-      maxUnavailable: 0    # never go below 3 ready Pods
+      maxSurge: 1 # allow 1 extra Pod during update (4 total)
+      maxUnavailable: 0 # never go below 3 ready Pods
 ```
 
 **Rollbacks:**
@@ -828,19 +859,19 @@ In a Pod spec, `command` and `args` override the container image's `ENTRYPOINT` 
 
 **Mapping to Dockerfile:**
 
-| Dockerfile | Pod spec | Purpose |
-|------------|----------|---------|
-| `ENTRYPOINT` | `command` | The executable to run |
-| `CMD` | `args` | Default arguments passed to the executable |
+| Dockerfile   | Pod spec  | Purpose                                    |
+| ------------ | --------- | ------------------------------------------ |
+| `ENTRYPOINT` | `command` | The executable to run                      |
+| `CMD`        | `args`    | Default arguments passed to the executable |
 
 **Override rules:**
 
-| `command` set? | `args` set? | What runs |
-|----------------|-------------|-----------|
-| No | No | Image's `ENTRYPOINT` + `CMD` |
-| Yes | No | Pod's `command` only (image CMD ignored) |
-| No | Yes | Image's `ENTRYPOINT` + Pod's `args` |
-| Yes | Yes | Pod's `command` + Pod's `args` |
+| `command` set? | `args` set? | What runs                                |
+| -------------- | ----------- | ---------------------------------------- |
+| No             | No          | Image's `ENTRYPOINT` + `CMD`             |
+| Yes            | No          | Pod's `command` only (image CMD ignored) |
+| No             | Yes         | Image's `ENTRYPOINT` + Pod's `args`      |
+| Yes            | Yes         | Pod's `command` + Pod's `args`           |
 
 **Examples:**
 
@@ -895,6 +926,7 @@ env:
 **2. From a ConfigMap (`configMapKeyRef` / `configMapRef`)**
 
 Single key:
+
 ```yaml
 env:
   - name: LOG_LEVEL
@@ -905,6 +937,7 @@ env:
 ```
 
 All keys at once:
+
 ```yaml
 envFrom:
   - configMapRef:
@@ -916,6 +949,7 @@ Each key in the ConfigMap becomes an environment variable.
 **3. From a Secret (`secretKeyRef` / `secretRef`)**
 
 Single key:
+
 ```yaml
 env:
   - name: DB_PASSWORD
@@ -926,6 +960,7 @@ env:
 ```
 
 All keys at once:
+
 ```yaml
 envFrom:
   - secretRef:
@@ -980,13 +1015,13 @@ env:
 
 **Summary table:**
 
-| Method | Source | Use case |
-|--------|--------|----------|
-| `value` | Inline string | Simple, static values |
-| `configMapKeyRef` / `configMapRef` | ConfigMap | Non-sensitive config shared across Pods |
-| `secretKeyRef` / `secretRef` | Secret | Passwords, tokens, certificates |
-| `fieldRef` | Pod metadata (Downward API) | Pod name, namespace, IP, node name |
-| `resourceFieldRef` | Container resources | Expose CPU/memory limits to the app |
+| Method                             | Source                      | Use case                                |
+| ---------------------------------- | --------------------------- | --------------------------------------- |
+| `value`                            | Inline string               | Simple, static values                   |
+| `configMapKeyRef` / `configMapRef` | ConfigMap                   | Non-sensitive config shared across Pods |
+| `secretKeyRef` / `secretRef`       | Secret                      | Passwords, tokens, certificates         |
+| `fieldRef`                         | Pod metadata (Downward API) | Pod name, namespace, IP, node name      |
+| `resourceFieldRef`                 | Container resources         | Expose CPU/memory limits to the app     |
 
 `envFrom` injects all keys from a ConfigMap or Secret. You can add `prefix` to namespace them:
 
@@ -1008,6 +1043,7 @@ This turns a ConfigMap key `PORT` into the variable `APP_PORT`.
 Init containers are specialized containers that run **before** the main application containers start. They run to completion, one at a time, in the order they are defined. The main containers only start after all init containers have succeeded.
 
 **Key properties:**
+
 - Run sequentially (not in parallel)
 - Must exit with code 0 to be considered successful
 - If an init container fails, the kubelet retries it according to the Pod's `restartPolicy`
@@ -1016,6 +1052,7 @@ Init containers are specialized containers that run **before** the main applicat
 - Do not support readiness, liveness, or startup probes (they are not long-running)
 
 **Common use cases:**
+
 - **Wait for dependencies** -- Block startup until a database or API is reachable
 - **Run database migrations** -- Apply schema changes before the app starts
 - **Populate shared volumes** -- Download config files or clone a Git repo
@@ -1053,11 +1090,11 @@ In this example, `wait-for-db` runs first until the database is reachable, then 
 
 **Init containers vs sidecar containers:**
 
-| Aspect | Init container | Sidecar container |
-|--------|---------------|-------------------|
-| When it runs | Before main containers | Alongside main containers |
-| Lifecycle | Runs to completion, then exits | Runs for the lifetime of the Pod |
-| Use case | Setup and preconditions | Ongoing support (logging, proxying) |
+| Aspect       | Init container                 | Sidecar container                   |
+| ------------ | ------------------------------ | ----------------------------------- |
+| When it runs | Before main containers         | Alongside main containers           |
+| Lifecycle    | Runs to completion, then exits | Runs for the lifetime of the Pod    |
+| Use case     | Setup and preconditions        | Ongoing support (logging, proxying) |
 
 ---
 
@@ -1068,18 +1105,19 @@ In this example, `wait-for-db` runs first until the database is reachable, then 
 A sidecar container runs **alongside** the main application container in the same Pod for the entire Pod's lifetime. It extends or enhances the application without modifying its code.
 
 Because containers in a Pod share the same network namespace and volumes, the sidecar can:
+
 - Access the same `localhost` network
 - Read/write to shared volumes
 - Start and stop with the same lifecycle
 
 **Common sidecar patterns:**
 
-| Pattern | Sidecar does | Example |
-|---------|-------------|---------|
-| **Proxy / Service mesh** | Handles traffic routing, mTLS, retries | Envoy (Istio), Linkerd proxy |
-| **Log shipping** | Reads log files from a shared volume and forwards them | Fluentd, Filebeat |
-| **Monitoring agent** | Collects metrics and sends to a backend | Prometheus exporter |
-| **Config reload** | Watches for config changes and signals the main app | Config watcher |
+| Pattern                  | Sidecar does                                           | Example                      |
+| ------------------------ | ------------------------------------------------------ | ---------------------------- |
+| **Proxy / Service mesh** | Handles traffic routing, mTLS, retries                 | Envoy (Istio), Linkerd proxy |
+| **Log shipping**         | Reads log files from a shared volume and forwards them | Fluentd, Filebeat            |
+| **Monitoring agent**     | Collects metrics and sends to a backend                | Prometheus exporter          |
+| **Config reload**        | Watches for config changes and signals the main app    | Config watcher               |
 
 **Example -- Envoy proxy sidecar:**
 
@@ -1115,7 +1153,7 @@ Kubernetes introduced a `restartPolicy: Always` field on init containers, making
 initContainers:
   - name: log-agent
     image: fluentd:latest
-    restartPolicy: Always   # makes this a native sidecar
+    restartPolicy: Always # makes this a native sidecar
 ```
 
 This solves the old problem of sidecar containers exiting before the main container finishes (or the main container starting before the sidecar is ready).
@@ -1201,11 +1239,11 @@ Scheduler: places Pods on the new node
 
 **Comparison:**
 
-| Autoscaler | What it scales | Based on | Built-in |
-|------------|---------------|----------|----------|
-| HPA | Pod replicas | CPU, memory, custom metrics | Yes |
-| VPA | Container resources (requests/limits) | Historical usage | No (add-on) |
-| Cluster Autoscaler | Nodes | Pending Pods / node utilization | No (add-on) |
+| Autoscaler         | What it scales                        | Based on                        | Built-in    |
+| ------------------ | ------------------------------------- | ------------------------------- | ----------- |
+| HPA                | Pod replicas                          | CPU, memory, custom metrics     | Yes         |
+| VPA                | Container resources (requests/limits) | Historical usage                | No (add-on) |
+| Cluster Autoscaler | Nodes                                 | Pending Pods / node utilization | No (add-on) |
 
 ---
 
@@ -1219,10 +1257,10 @@ Kubernetes supports many volume types. The most important ones for interviews:
 
 **Ephemeral volumes (deleted with the Pod):**
 
-| Type | Description |
-|------|-------------|
-| `emptyDir` | Empty directory created when the Pod starts. Shared between containers in the same Pod. Deleted when the Pod is removed. |
-| `emptyDir` with `medium: Memory` | Same as above but backed by tmpfs (RAM). Fast but counts against the container's memory limit. |
+| Type                             | Description                                                                                                              |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `emptyDir`                       | Empty directory created when the Pod starts. Shared between containers in the same Pod. Deleted when the Pod is removed. |
+| `emptyDir` with `medium: Memory` | Same as above but backed by tmpfs (RAM). Fast but counts against the container's memory limit.                           |
 
 ```yaml
 volumes:
@@ -1236,20 +1274,20 @@ volumes:
 
 **Persistent volumes (survive Pod deletion):**
 
-| Type | Description |
-|------|-------------|
-| `persistentVolumeClaim` | References a PVC, which binds to a PV. The standard way to use persistent storage. |
-| `hostPath` | Mounts a file or directory from the host node's filesystem. Dangerous in production -- ties the Pod to a specific node. |
-| `nfs` | Mounts an NFS share. Supports `ReadWriteMany` access mode. |
+| Type                    | Description                                                                                                             |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `persistentVolumeClaim` | References a PVC, which binds to a PV. The standard way to use persistent storage.                                      |
+| `hostPath`              | Mounts a file or directory from the host node's filesystem. Dangerous in production -- ties the Pod to a specific node. |
+| `nfs`                   | Mounts an NFS share. Supports `ReadWriteMany` access mode.                                                              |
 
 **Configuration volumes (read-only data injected into the Pod):**
 
-| Type | Description |
-|------|-------------|
-| `configMap` | Mounts ConfigMap keys as files. |
-| `secret` | Mounts Secret keys as files on a tmpfs (never written to disk). |
-| `downwardAPI` | Exposes Pod metadata (labels, annotations, resource limits) as files. |
-| `projected` | Combines multiple sources (ConfigMap, Secret, downwardAPI, ServiceAccountToken) into a single mount. |
+| Type          | Description                                                                                          |
+| ------------- | ---------------------------------------------------------------------------------------------------- |
+| `configMap`   | Mounts ConfigMap keys as files.                                                                      |
+| `secret`      | Mounts Secret keys as files on a tmpfs (never written to disk).                                      |
+| `downwardAPI` | Exposes Pod metadata (labels, annotations, resource limits) as files.                                |
+| `projected`   | Combines multiple sources (ConfigMap, Secret, downwardAPI, ServiceAccountToken) into a single mount. |
 
 ```yaml
 volumes:
@@ -1264,11 +1302,11 @@ volumes:
 
 **Cloud provider volumes (via CSI):**
 
-| Provider | CSI driver |
-|----------|-----------|
-| AWS | `ebs.csi.aws.com` (EBS), `efs.csi.aws.com` (EFS) |
-| GCP | `pd.csi.storage.gke.io` (Persistent Disk) |
-| Azure | `disk.csi.azure.com` (Azure Disk), `file.csi.azure.com` (Azure Files) |
+| Provider | CSI driver                                                            |
+| -------- | --------------------------------------------------------------------- |
+| AWS      | `ebs.csi.aws.com` (EBS), `efs.csi.aws.com` (EFS)                      |
+| GCP      | `pd.csi.storage.gke.io` (Persistent Disk)                             |
+| Azure    | `disk.csi.azure.com` (Azure Disk), `file.csi.azure.com` (Azure Files) |
 
 These are used through PVCs and StorageClasses, not referenced directly.
 
@@ -1348,20 +1386,20 @@ spec:
 
 **Access modes:**
 
-| Mode | Abbreviation | Description |
-|------|-------------|-------------|
-| ReadWriteOnce | RWO | Mounted read-write by a single node |
-| ReadOnlyMany | ROX | Mounted read-only by many nodes |
-| ReadWriteMany | RWX | Mounted read-write by many nodes (NFS, EFS) |
-| ReadWriteOncePod | RWOP | Mounted read-write by a single Pod (k8s 1.27+) |
+| Mode             | Abbreviation | Description                                    |
+| ---------------- | ------------ | ---------------------------------------------- |
+| ReadWriteOnce    | RWO          | Mounted read-write by a single node            |
+| ReadOnlyMany     | ROX          | Mounted read-only by many nodes                |
+| ReadWriteMany    | RWX          | Mounted read-write by many nodes (NFS, EFS)    |
+| ReadWriteOncePod | RWOP         | Mounted read-write by a single Pod (k8s 1.27+) |
 
 **Reclaim policies:**
 
-| Policy | What happens when PVC is deleted |
-|--------|--------------------------------|
-| Retain | PV remains with data intact. Admin must manually clean up. |
-| Delete | PV and underlying storage are deleted. Default for dynamic provisioning. |
-| Recycle | Deprecated. Was a basic `rm -rf /volume/*`. |
+| Policy  | What happens when PVC is deleted                                         |
+| ------- | ------------------------------------------------------------------------ |
+| Retain  | PV remains with data intact. Admin must manually clean up.               |
+| Delete  | PV and underlying storage are deleted. Default for dynamic provisioning. |
+| Recycle | Deprecated. Was a basic `rm -rf /volume/*`.                              |
 
 ---
 
@@ -1387,13 +1425,13 @@ allowVolumeExpansion: true
 
 **Key fields:**
 
-| Field | Purpose |
-|-------|---------|
-| `provisioner` | The CSI driver or plugin that creates the actual storage |
-| `parameters` | Provider-specific settings (disk type, IOPS, etc.) |
-| `reclaimPolicy` | What happens to the PV when the PVC is deleted |
-| `volumeBindingMode` | `Immediate` (bind PV right away) or `WaitForFirstConsumer` (bind when a Pod uses it -- avoids zone mismatch) |
-| `allowVolumeExpansion` | Whether PVCs using this class can be resized |
+| Field                  | Purpose                                                                                                      |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `provisioner`          | The CSI driver or plugin that creates the actual storage                                                     |
+| `parameters`           | Provider-specific settings (disk type, IOPS, etc.)                                                           |
+| `reclaimPolicy`        | What happens to the PV when the PVC is deleted                                                               |
+| `volumeBindingMode`    | `Immediate` (bind PV right away) or `WaitForFirstConsumer` (bind when a Pod uses it -- avoids zone mismatch) |
+| `allowVolumeExpansion` | Whether PVCs using this class can be resized                                                                 |
 
 **PVC referencing a StorageClass:**
 
@@ -1425,13 +1463,13 @@ A StatefulSet manages stateful applications that need stable identities and pers
 
 **How it differs from a Deployment:**
 
-| Feature | Deployment | StatefulSet |
-|---------|-----------|-------------|
-| Pod names | Random suffix (`myapp-7b4d5-xk2lp`) | Ordered index (`myapp-0`, `myapp-1`, `myapp-2`) |
-| Startup order | All Pods start in parallel | Pods start sequentially (0, then 1, then 2) |
-| Stable network ID | No | Yes, via a headless Service (`myapp-0.myapp-svc`) |
-| Storage | Shared PVC or no PVC | Each Pod gets its own PVC via `volumeClaimTemplates` |
-| Deletion order | Random | Reverse order (2, then 1, then 0) |
+| Feature           | Deployment                          | StatefulSet                                          |
+| ----------------- | ----------------------------------- | ---------------------------------------------------- |
+| Pod names         | Random suffix (`myapp-7b4d5-xk2lp`) | Ordered index (`myapp-0`, `myapp-1`, `myapp-2`)      |
+| Startup order     | All Pods start in parallel          | Pods start sequentially (0, then 1, then 2)          |
+| Stable network ID | No                                  | Yes, via a headless Service (`myapp-0.myapp-svc`)    |
+| Storage           | Shared PVC or no PVC                | Each Pod gets its own PVC via `volumeClaimTemplates` |
+| Deletion order    | Random                              | Reverse order (2, then 1, then 0)                    |
 
 **volumeClaimTemplates:**
 
@@ -1480,7 +1518,7 @@ Deleting a StatefulSet does **not** delete its PVCs. This is by design to preven
 
 ## Networking
 
-### Q29: Explain the Kubernetes networking model.
+### Q29: Explain the Kubernetes networking model
 
 **Answer:**
 
@@ -1493,29 +1531,33 @@ Kubernetes imposes three fundamental rules:
 **How traffic flows at each level:**
 
 **Pod-to-Pod on the same node:**
+
 - Containers within a Pod communicate via `localhost`.
 - Pods on the same node communicate through a virtual bridge (e.g., `cbr0`). The CNI plugin sets this up.
 
 **Pod-to-Pod across nodes:**
+
 - The CNI plugin creates an overlay network (VXLAN, IPIP, WireGuard) or uses native routing (BGP with Calico).
 - Each node gets a Pod CIDR (e.g., `10.244.1.0/24`), and the CNI plugin ensures routes exist between them.
 
 **Pod-to-Service:**
+
 - Pods access Services via ClusterIP or DNS name.
 - `kube-proxy` uses iptables/IPVS rules to NAT the Service IP to a backing Pod IP.
 
 **External-to-Pod:**
+
 - NodePort: External traffic hits `<NodeIP>:<NodePort>`, kube-proxy forwards to a Pod.
 - LoadBalancer: Cloud LB forwards to NodePorts.
 - Ingress: An Ingress controller (nginx, Traefik) terminates HTTP/HTTPS and routes to Services.
 
 **Key IP ranges:**
 
-| Range | Purpose | Example |
-|-------|---------|---------|
-| Pod CIDR | IP addresses for Pods | `10.244.0.0/16` |
-| Service CIDR | ClusterIP addresses for Services | `10.96.0.0/12` |
-| Node IPs | Actual node addresses | `192.168.1.0/24` |
+| Range        | Purpose                          | Example          |
+| ------------ | -------------------------------- | ---------------- |
+| Pod CIDR     | IP addresses for Pods            | `10.244.0.0/16`  |
+| Service CIDR | ClusterIP addresses for Services | `10.96.0.0/12`   |
+| Node IPs     | Actual node addresses            | `192.168.1.0/24` |
 
 ---
 
@@ -1526,6 +1568,7 @@ Kubernetes imposes three fundamental rules:
 A NetworkPolicy controls traffic flow to and from Pods at the IP/port level. By default, all Pods can communicate with all other Pods. NetworkPolicies add firewall-like rules.
 
 **Key concepts:**
+
 - NetworkPolicies are namespace-scoped.
 - They select Pods using `podSelector`.
 - They require a CNI plugin that supports them (Calico, Cilium, Weave). Flannel does **not** support NetworkPolicies.
@@ -1540,7 +1583,7 @@ metadata:
   name: deny-all
   namespace: production
 spec:
-  podSelector: {}   # selects all Pods in the namespace
+  podSelector: {} # selects all Pods in the namespace
   policyTypes:
     - Ingress
 ```
@@ -1583,13 +1626,13 @@ egress:
 
 **Common patterns:**
 
-| Pattern | podSelector | policyTypes | Rules |
-|---------|------------|-------------|-------|
-| Deny all ingress | `{}` | Ingress | No `ingress` rules |
-| Deny all egress | `{}` | Egress | No `egress` rules |
-| Allow from specific Pods | `app: backend` | Ingress | `from: podSelector: app: frontend` |
-| Allow from a namespace | `app: backend` | Ingress | `from: namespaceSelector: name: monitoring` |
-| Allow to external CIDR | `app: backend` | Egress | `to: ipBlock: cidr: 10.0.0.0/8` |
+| Pattern                  | podSelector    | policyTypes | Rules                                       |
+| ------------------------ | -------------- | ----------- | ------------------------------------------- |
+| Deny all ingress         | `{}`           | Ingress     | No `ingress` rules                          |
+| Deny all egress          | `{}`           | Egress      | No `egress` rules                           |
+| Allow from specific Pods | `app: backend` | Ingress     | `from: podSelector: app: frontend`          |
+| Allow from a namespace   | `app: backend` | Ingress     | `from: namespaceSelector: name: monitoring` |
+| Allow to external CIDR   | `app: backend` | Egress      | `to: ipBlock: cidr: 10.0.0.0/8`             |
 
 ---
 
@@ -1601,22 +1644,22 @@ An Ingress is an API object that manages external HTTP/HTTPS access to Services.
 
 **What Ingress adds over a plain Service:**
 
-| Feature | Service (NodePort / LB) | Ingress |
-|---------|------------------------|---------|
-| Layer | L4 (TCP/UDP) | L7 (HTTP/HTTPS) |
-| Host-based routing | No | Yes (`app.example.com` vs `api.example.com`) |
-| Path-based routing | No | Yes (`/app` vs `/api`) |
-| TLS termination | No (needs external LB) | Yes (terminates HTTPS at the Ingress controller) |
-| Single entry point | One LB per Service | One LB for many Services |
+| Feature            | Service (NodePort / LB) | Ingress                                          |
+| ------------------ | ----------------------- | ------------------------------------------------ |
+| Layer              | L4 (TCP/UDP)            | L7 (HTTP/HTTPS)                                  |
+| Host-based routing | No                      | Yes (`app.example.com` vs `api.example.com`)     |
+| Path-based routing | No                      | Yes (`/app` vs `/api`)                           |
+| TLS termination    | No (needs external LB)  | Yes (terminates HTTPS at the Ingress controller) |
+| Single entry point | One LB per Service      | One LB for many Services                         |
 
 **Ingress requires an Ingress controller** (a Pod that reads Ingress resources and configures routing). Common controllers:
 
-| Controller | Notes |
-|-----------|-------|
-| NGINX Ingress | Most widely used, community and NGINX Inc versions |
-| Traefik | Auto-discovery, built-in Let's Encrypt |
-| HAProxy | High performance |
-| AWS ALB Ingress | Provisions AWS ALBs directly |
+| Controller      | Notes                                              |
+| --------------- | -------------------------------------------------- |
+| NGINX Ingress   | Most widely used, community and NGINX Inc versions |
+| Traefik         | Auto-discovery, built-in Let's Encrypt             |
+| HAProxy         | High performance                                   |
+| AWS ALB Ingress | Provisions AWS ALBs directly                       |
 
 **Example:**
 
@@ -1655,11 +1698,11 @@ spec:
 
 **Path types:**
 
-| Type | Behavior |
-|------|----------|
-| `Exact` | Matches the path exactly (e.g., `/api` but not `/api/v1`) |
-| `Prefix` | Matches the path prefix (e.g., `/api` matches `/api`, `/api/v1`, `/api/users`) |
-| `ImplementationSpecific` | Behavior depends on the Ingress controller |
+| Type                     | Behavior                                                                       |
+| ------------------------ | ------------------------------------------------------------------------------ |
+| `Exact`                  | Matches the path exactly (e.g., `/api` but not `/api/v1`)                      |
+| `Prefix`                 | Matches the path prefix (e.g., `/api` matches `/api`, `/api/v1`, `/api/users`) |
+| `ImplementationSpecific` | Behavior depends on the Ingress controller                                     |
 
 ---
 
@@ -1671,13 +1714,13 @@ Kubernetes runs **CoreDNS** as a Deployment in `kube-system`. Every Pod is confi
 
 **What CoreDNS resolves:**
 
-| Record | Format | Example |
-|--------|--------|---------|
-| Service | `<service>.<namespace>.svc.cluster.local` | `myapp.production.svc.cluster.local` |
-| Pod | `<pod-ip-dashed>.<namespace>.pod.cluster.local` | `10-244-1-5.production.pod.cluster.local` |
-| StatefulSet Pod | `<pod-name>.<headless-service>.<namespace>.svc.cluster.local` | `postgres-0.postgres-svc.production.svc.cluster.local` |
-| Headless Service | Returns Pod IPs directly (A records for each Pod) | `postgres-svc.production.svc.cluster.local` |
-| ExternalName Service | Returns a CNAME record | `mydb.production.svc.cluster.local` -> `db.example.com` |
+| Record               | Format                                                        | Example                                                 |
+| -------------------- | ------------------------------------------------------------- | ------------------------------------------------------- |
+| Service              | `<service>.<namespace>.svc.cluster.local`                     | `myapp.production.svc.cluster.local`                    |
+| Pod                  | `<pod-ip-dashed>.<namespace>.pod.cluster.local`               | `10-244-1-5.production.pod.cluster.local`               |
+| StatefulSet Pod      | `<pod-name>.<headless-service>.<namespace>.svc.cluster.local` | `postgres-0.postgres-svc.production.svc.cluster.local`  |
+| Headless Service     | Returns Pod IPs directly (A records for each Pod)             | `postgres-svc.production.svc.cluster.local`             |
+| ExternalName Service | Returns a CNAME record                                        | `mydb.production.svc.cluster.local` -> `db.example.com` |
 
 **DNS search domains:**
 
@@ -1689,17 +1732,18 @@ nameserver 10.96.0.10
 ```
 
 This means:
+
 - `myapp` resolves by trying `myapp.production.svc.cluster.local` first
 - `myapp.other-ns` resolves as `myapp.other-ns.svc.cluster.local`
 
 **dnsPolicy options:**
 
-| Policy | Behavior |
-|--------|----------|
-| `ClusterFirst` (default) | Use CoreDNS for cluster names, forward external names to upstream |
-| `Default` | Use the node's DNS config (`/etc/resolv.conf` on the node) |
-| `None` | No auto-config. You must provide `dnsConfig` manually |
-| `ClusterFirstWithHostNet` | Like `ClusterFirst` but for Pods using `hostNetwork: true` |
+| Policy                    | Behavior                                                          |
+| ------------------------- | ----------------------------------------------------------------- |
+| `ClusterFirst` (default)  | Use CoreDNS for cluster names, forward external names to upstream |
+| `Default`                 | Use the node's DNS config (`/etc/resolv.conf` on the node)        |
+| `None`                    | No auto-config. You must provide `dnsConfig` manually             |
+| `ClusterFirstWithHostNet` | Like `ClusterFirst` but for Pods using `hostNetwork: true`        |
 
 **Debugging DNS:**
 

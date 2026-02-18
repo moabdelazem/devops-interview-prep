@@ -151,6 +151,7 @@ git commit -m "chore: add secrets.env to gitignore"
 ```
 
 **Prevention:**
+
 - Use `.gitignore` from the start
 - Use pre-commit hooks (e.g., `detect-secrets`, `gitleaks`) to block secrets
 - Store secrets in environment variables or a vault, never in the repo
@@ -227,16 +228,16 @@ git rebase --continue
 
 **Answer:**
 
-| Strategy | How it helps |
-|----------|-------------|
-| Small, frequent commits | Less divergence between branches |
-| Short-lived branches | Merge back to main quickly |
-| Rebase before merging | Catches conflicts early |
-| Code ownership / file locking | Avoid simultaneous edits in critical files |
-| Modular code design | Smaller files with single responsibilities reduce overlap |
-| Communication | Coordinate when someone is working on a shared config or schema file |
-| Branch protection + required reviews | Forces PRs and catches conflicts before they hit main |
-| Trunk-based development | Very short-lived branches or direct commits reduce divergence |
+| Strategy                             | How it helps                                                         |
+| ------------------------------------ | -------------------------------------------------------------------- |
+| Small, frequent commits              | Less divergence between branches                                     |
+| Short-lived branches                 | Merge back to main quickly                                           |
+| Rebase before merging                | Catches conflicts early                                              |
+| Code ownership / file locking        | Avoid simultaneous edits in critical files                           |
+| Modular code design                  | Smaller files with single responsibilities reduce overlap            |
+| Communication                        | Coordinate when someone is working on a shared config or schema file |
+| Branch protection + required reviews | Forces PRs and catches conflicts before they hit main                |
+| Trunk-based development              | Very short-lived branches or direct commits reduce divergence        |
 
 ---
 
@@ -281,13 +282,13 @@ Worktrees let you have multiple branches checked out simultaneously in different
 
 **Answer:**
 
-| Cause | How to confirm | Fix |
-|-------|---------------|-----|
-| Uncommitted or unstaged files | `git status` shows changes not pushed | Commit and push everything |
-| .gitignore excludes a needed file | File exists locally but not in CI | Remove from .gitignore or use a different approach |
-| Environment differences | CI uses different OS/version/tools | Match CI environment locally (use Docker) |
-| Dependency pinning issues | `package-lock.json` or `go.sum` not committed | Commit lock files |
-| Cached build artifacts locally | Local build reuses old outputs | Run `git clean -fdx` locally and rebuild |
-| Different branch/commit | CI runs on a different commit | Verify the commit SHA in CI matches what you expect |
+| Cause                             | How to confirm                                | Fix                                                 |
+| --------------------------------- | --------------------------------------------- | --------------------------------------------------- |
+| Uncommitted or unstaged files     | `git status` shows changes not pushed         | Commit and push everything                          |
+| .gitignore excludes a needed file | File exists locally but not in CI             | Remove from .gitignore or use a different approach  |
+| Environment differences           | CI uses different OS/version/tools            | Match CI environment locally (use Docker)           |
+| Dependency pinning issues         | `package-lock.json` or `go.sum` not committed | Commit lock files                                   |
+| Cached build artifacts locally    | Local build reuses old outputs                | Run `git clean -fdx` locally and rebuild            |
+| Different branch/commit           | CI runs on a different commit                 | Verify the commit SHA in CI matches what you expect |
 
 ---
