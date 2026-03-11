@@ -2,7 +2,51 @@
 
 General and conceptual interview questions with clear answers.
 
+## Table of Contents
+
+- [Architecture and Core Concepts](#architecture-and-core-concepts)
+  - [Q1: What is Kubernetes and why is it needed?](#q1-what-is-kubernetes-and-why-is-it-needed)
+  - [Q2: Explain the Kubernetes architecture](#q2-explain-the-kubernetes-architecture)
+  - [Q3: Describe the lifecycle of a resource creation request](#q3-describe-the-lifecycle-of-a-resource-creation-request-in-kubernetes)
+  - [Q4: Explain the Node, ReplicaSet, and Deployment controllers](#q4-explain-the-node-replicaset-and-deployment-controllers-and-how-they-interact-with-the-api-server)
+  - [Q5: How does the Kubernetes scheduler work?](#q5-how-does-the-kubernetes-scheduler-work)
+  - [Q6: What does the kubelet do?](#q6-what-does-the-kubelet-do)
+  - [Q7: What is kube-proxy and what is a CNI plugin?](#q7-what-is-kube-proxy-what-is-a-cni-plugin-and-how-do-they-differ)
+- [Core Resources](#core-resources)
+  - [Q8: What is a Pod and what can it contain?](#q8-what-is-a-pod-and-what-can-it-contain)
+  - [Q9: What is a Deployment and how do rollout strategies work?](#q9-what-is-a-deployment-and-how-do-rollout-strategies-work)
+  - [Q10: What are Services and what are the different types?](#q10-what-are-services-and-what-are-the-different-types)
+  - [Q11: What are ConfigMaps and how are they used?](#q11-what-are-configmaps-and-how-are-they-used)
+  - [Q12: What are Secrets and how do they differ from ConfigMaps?](#q12-what-are-secrets-and-how-do-they-differ-from-configmaps)
+  - [Q13: What are Namespaces and when should you use them?](#q13-what-are-namespaces-and-when-should-you-use-them)
+- [Scheduling and Node Management](#scheduling-and-node-management)
+  - [Q14: What are taints and tolerations?](#q14-what-are-taints-and-tolerations)
+  - [Q15: What are labels and selectors?](#q15-what-are-labels-and-selectors)
+  - [Q16: What is the difference between nodeSelector and node affinity?](#q16-what-is-the-difference-between-nodeselector-and-node-affinity)
+  - [Q17: What is a DaemonSet?](#q17-what-is-a-daemonset)
+  - [Q18: What are static Pods?](#q18-what-are-static-pods)
+- [Pod Configuration and Lifecycle](#pod-configuration-and-lifecycle)
+  - [Q19: How do rolling updates and rollbacks work?](#q19-how-do-rolling-updates-and-rollbacks-work)
+  - [Q20: How do command and args work in a Pod spec?](#q20-how-do-command-and-args-work-in-a-pod-spec)
+  - [Q21: What are all the ways to inject environment variables into a Pod?](#q21-what-are-all-the-ways-to-inject-environment-variables-into-a-pod)
+  - [Q22: What are init containers and how do they work?](#q22-what-are-init-containers-and-how-do-they-work)
+  - [Q23: What is a sidecar container?](#q23-what-is-a-sidecar-container)
+- [Autoscaling](#autoscaling)
+  - [Q24: What is autoscaling in Kubernetes?](#q24-what-is-autoscaling-in-kubernetes)
+- [Storage](#storage)
+  - [Q25: What are the different volume types in Kubernetes?](#q25-what-are-the-different-volume-types-in-kubernetes)
+  - [Q26: What are PersistentVolumes and PersistentVolumeClaims?](#q26-what-are-persistentvolumes-persistentvolumeclaims-and-how-do-they-work-together)
+  - [Q27: What are StorageClasses and dynamic provisioning?](#q27-what-are-storageclasses-and-dynamic-provisioning)
+  - [Q28: What is a StatefulSet and how does it handle storage?](#q28-what-is-a-statefulset-and-how-does-it-handle-storage)
+- [Networking](#networking)
+  - [Q29: Explain the Kubernetes networking model](#q29-explain-the-kubernetes-networking-model)
+  - [Q30: What are NetworkPolicies?](#q30-what-are-networkpolicies)
+  - [Q31: What is Ingress and how does it differ from a Service?](#q31-what-is-ingress-and-how-does-it-differ-from-a-service)
+  - [Q32: How does DNS work inside a Kubernetes cluster?](#q32-how-does-dns-work-inside-a-kubernetes-cluster)
+
 ---
+
+## Architecture and Core Concepts
 
 ### Q1: What is Kubernetes and why is it needed?
 
@@ -571,6 +615,8 @@ Namespaces do **not** provide network isolation by default. Pods across namespac
 
 ---
 
+## Scheduling and Node Management
+
 ### Q14: What are taints and tolerations?
 
 **Answer:**
@@ -793,6 +839,8 @@ ls /etc/kubernetes/manifests/
 This solves the chicken-and-egg problem -- the kubelet can start control plane components before the API server exists.
 
 ---
+
+## Pod Configuration and Lifecycle
 
 ### Q19: How do rolling updates and rollbacks work?
 
@@ -1159,6 +1207,8 @@ initContainers:
 This solves the old problem of sidecar containers exiting before the main container finishes (or the main container starting before the sidecar is ready).
 
 ---
+
+## Autoscaling
 
 ### Q24: What is autoscaling in Kubernetes?
 
